@@ -1,0 +1,8 @@
+{
+  "name": "Djentinga-mcp",
+  "description": "Rider + Serena MCP servers with skills for tool routing, C# conventions, and code review",
+  "version": "1.0.1",
+  "author": {
+    "name": "Joachim Arting"
+  }
+}
