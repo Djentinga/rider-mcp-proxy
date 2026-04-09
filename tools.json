@@ -1,0 +1,22 @@
+{
+  "allowed": [
+    "get_file_text_by_path",
+    "read_file",
+    "search_text",
+    "search_regex",
+    "find_files_by_glob",
+    "replace_text_in_file",
+    "create_new_file",
+    "rename_refactoring",
+    "reformat_file",
+    "execute_terminal_command"
+  ],
+  "forbidden": [
+    "search_in_files_by_text",
+    "search_in_files_by_regex",
+    "search_symbol",
+    "get_file_problems",
+    "get_symbol_info",
+    "build_project"
+  ]
+}

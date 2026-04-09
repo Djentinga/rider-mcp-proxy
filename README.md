@@ -1,38 +1,38 @@
-# Djentinga-mcp
+# Rider MCP Proxy
 
-Claude Code plugin that configures JetBrains Rider and Serena MCP servers with skills for tool routing, C# conventions, and code review.
+A Claude Code plugin that bridges Claude to JetBrains Rider's MCP server.
 
 ## Features
 
-- **Rider MCP** — auto-detects Rider installation path (standard + Toolbox), builds classpath, detects MCP port from running process
-- **Serena MCP** — Roslyn-based C# language server with `.slnx` support
-- **Auto-install** — installs uv, .NET 10 SDK, and pre-caches Serena on first run (skips if already present)
-- **Serena patch** — skips redundant csproj BFS scan when a `.sln`/`.slnx` file is found
-
-## Skills
-
-| Skill | Description |
-|-------|-------------|
-| `tool-selection` | Mandatory routing: when to use Rider, Serena, or built-in tools |
-| `writing-csharp` | C# 14 conventions (formatting, primary constructors, patterns, naming) |
-| `code-review` | Review workflow using Rider + Serena for changed symbols only |
+- Auto-detects running Rider (Windows-side or Linux Remote Dev)
+- Lightweight stdio-to-HTTP proxy — no Java bridge needed
+- Configurable tool filtering via `tools.json`
+- Automatic WSL2 networking setup
 
 ## Install
 
 ```
-/plugin marketplace add Djentinga/claude-marketplace
-/plugin install Djentinga-mcp@djentinga-plugins
+claude plugin marketplace add Djentinga/claude-marketplace
+claude plugin install rider-mcp-proxy@Djentinga
 ```
 
-## Prerequisites
+Requires JetBrains Rider with MCP enabled and WSL2.
 
-Installed automatically by the SessionStart hook if missing:
+On first run, the plugin configures `networkingMode=mirrored` in `.wslconfig`. Run `wsl --shutdown` from PowerShell and relaunch WSL to complete setup.
 
-- [uv](https://docs.astral.sh/uv/) (provides `uvx` for running Serena)
-- [.NET 10 SDK](https://dotnet.microsoft.com/)
-- [Serena](https://github.com/oraios/serena) (pre-cached via uvx)
+## Tool Filtering
 
-Required on the host machine:
+Rider exposes ~30 MCP tools. Control which ones Claude sees via `tools.json` in the plugin root:
 
-- JetBrains Rider (standard install or Toolbox)
-- WSL2 (scripts assume Linux-side execution calling Windows-side Rider)
+```json
+{
+  "allowed": ["get_file_text_by_path", "replace_text_in_file", "..."],
+  "forbidden": ["search_in_files_by_text", "build_project", "..."]
+}
+```
+
+- **`allowed`** — only these tools are exposed. Omit to allow all.
+- **`forbidden`** — always removed, even if in `allowed`.
+- If the file is missing, all tools pass through unfiltered.
+
+Filtered tools never reach Claude — no token spend on unused schemas.

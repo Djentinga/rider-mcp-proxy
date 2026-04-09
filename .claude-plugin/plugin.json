@@ -1,7 +1,7 @@
 {
   "name": "Djentinga-mcp",
-  "description": "Rider + Serena MCP servers with skills for tool routing, C# conventions, and code review",
-  "version": "1.0.1",
+  "description": "A lightweight Rider MCP proxy with configurable tool filtering and auto WSL2 setup",
+  "version": "1.0.0",
   "author": {
     "name": "Joachim Arting"
   }
