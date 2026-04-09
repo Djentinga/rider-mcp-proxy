@@ -13,7 +13,7 @@ A Claude Code plugin that bridges Claude to JetBrains Rider's MCP server.
 
 ```
 claude plugin marketplace add Djentinga/claude-marketplace
-claude plugin install rider-mcp-proxy@Djentinga
+claude plugin install rider-mcp-proxy@djentinga
 ```
 
 Requires JetBrains Rider with MCP enabled and WSL2.
