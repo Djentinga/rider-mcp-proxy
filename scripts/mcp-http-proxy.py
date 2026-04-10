@@ -15,83 +15,9 @@ import threading
 import time
 
 
-PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOLS_CONFIG = os.path.join(PLUGIN_ROOT, "tools.json")
-
-
 def _log(msg):
     print(f"[mcp-http-proxy] {msg}", file=sys.stderr)
 
-
-def load_tools_config():
-    """Load allowed/forbidden tool sets from tools.json.
-
-    If allowed is set, only those tools are exposed.
-    Forbidden tools are always removed, even if also in allowed.
-    If neither is set, all tools pass through unfiltered.
-    """
-    if not os.path.exists(TOOLS_CONFIG):
-        _log(f"No {TOOLS_CONFIG} found — all Rider tools will be exposed unfiltered")
-        return None, set()
-
-    try:
-        with open(TOOLS_CONFIG) as f:
-            cfg = json.load(f)
-    except PermissionError:
-        _log(f"ERROR: Cannot read {TOOLS_CONFIG} — permission denied. "
-             f"Fix with: chmod 644 {TOOLS_CONFIG}")
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        _log(f"ERROR: {TOOLS_CONFIG} contains invalid JSON at line {e.lineno}: {e.msg}. "
-             f"Validate with: python3 -m json.tool {TOOLS_CONFIG}")
-        sys.exit(1)
-
-    if not isinstance(cfg, dict):
-        _log(f"ERROR: {TOOLS_CONFIG} must be a JSON object with 'allowed' and/or 'forbidden' arrays. "
-             f"Got {type(cfg).__name__} instead.")
-        sys.exit(1)
-
-    allowed = None
-    forbidden = set()
-
-    for key in cfg:
-        if key not in ("allowed", "forbidden"):
-            _log(f"WARNING: Unknown key '{key}' in {TOOLS_CONFIG} — ignored. "
-                 f"Valid keys: 'allowed', 'forbidden'")
-
-    for key in ("allowed", "forbidden"):
-        value = cfg.get(key)
-        if value is None:
-            continue
-        if not isinstance(value, list):
-            _log(f"ERROR: '{key}' in {TOOLS_CONFIG} must be an array of tool names. "
-                 f"Got {type(value).__name__} instead.")
-            sys.exit(1)
-        bad = [v for v in value if not isinstance(v, str)]
-        if bad:
-            _log(f"ERROR: '{key}' in {TOOLS_CONFIG} contains non-string entries: {bad}. "
-                 f"All entries must be tool name strings.")
-            sys.exit(1)
-
-    if cfg.get("allowed"):
-        allowed = set(cfg["allowed"])
-    if cfg.get("forbidden"):
-        forbidden = set(cfg["forbidden"])
-
-    overlap = (allowed or set()) & forbidden
-    if overlap:
-        _log(f"WARNING: Tools in both 'allowed' and 'forbidden': {sorted(overlap)} — "
-             f"these will be blocked ('forbidden' wins)")
-
-    if allowed is not None:
-        _log(f"Tool filter: {len(allowed)} allowed, {len(forbidden)} forbidden")
-    elif forbidden:
-        _log(f"Tool filter: all allowed except {len(forbidden)} forbidden")
-
-    return allowed, forbidden
-
-
-ALLOWED_TOOLS, FORBIDDEN_TOOLS = load_tools_config()
 
 WSL_SETUP_NOTICE = (
     "Rider MCP auto-configured your .wslconfig with networkingMode=mirrored.\n"
@@ -273,29 +199,6 @@ def main():
             pass
         return line
 
-    def filter_tools_response(msg):
-        """Filter tools/list responses using allowed/forbidden from tools.json."""
-        tools = msg.get("result", {}).get("tools")
-        if tools is None:
-            return msg
-        before = len(tools)
-        filtered = tools
-        if ALLOWED_TOOLS is not None:
-            filtered = [t for t in filtered if t.get("name") in ALLOWED_TOOLS]
-        if FORBIDDEN_TOOLS:
-            filtered = [t for t in filtered if t.get("name") not in FORBIDDEN_TOOLS]
-        removed = before - len(filtered)
-        if removed:
-            _log(f"Filtered tools: {len(filtered)} exposed, {removed} hidden")
-        msg["result"]["tools"] = filtered
-        return msg
-
-    def maybe_filter_response(msg, request_method):
-        """Filter tools/list responses to only include allowed tools."""
-        if request_method == "tools/list":
-            return filter_tools_response(msg)
-        return msg
-
     _log(f"Proxying stdio to http://{host}:{port}{endpoint}")
     if project_path:
         _log(f"Project path: {project_path}")
@@ -310,14 +213,6 @@ def main():
             if not line:
                 continue
             line = inject_project_path(line)
-
-            # Track request method so we can filter the response
-            request_method = ""
-            try:
-                request_method = json.loads(line).get("method", "")
-            except (json.JSONDecodeError, AttributeError):
-                pass
-
             try:
                 conn = http.client.HTTPConnection(host, port, timeout=300)
                 headers = {
@@ -341,13 +236,13 @@ def main():
                     resp.read()
                 elif "text/event-stream" in content_type:
                     for msg in read_sse_events(resp):
-                        write_message(maybe_filter_response(msg, request_method))
+                        write_message(msg)
                 else:
                     body = resp.read().decode("utf-8", errors="replace")
                     if body.strip():
                         try:
                             msg = json.loads(body)
-                            write_message(maybe_filter_response(msg, request_method))
+                            write_message(msg)
                         except json.JSONDecodeError:
                             _log(f"Bad JSON from Rider: {body[:200]}")
 
