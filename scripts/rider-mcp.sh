@@ -94,16 +94,55 @@ fi
 echo "Rider detected (mode: $MODE)" >&2
 
 # --- Detect Rider MCP port ---
+# Probe a candidate port by POSTing a JSON-RPC initialize to /stream.
+# Returns 0 if the response status is 200 (real MCP endpoint), else 1.
+# Rider exposes several HTTP ports in the 64342-65000 range; only one
+# serves the MCP streamable-http protocol, so endpoint validation is
+# required to avoid picking the wrong one (returns 404 on /stream).
+probe_mcp_port() {
+    local port="$1"
+    python3 - "$port" <<'PYEOF' 2>/dev/null
+import http.client, json, sys
+port = int(sys.argv[1])
+body = json.dumps({
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-03-26",
+        "capabilities": {},
+        "clientInfo": {"name": "rider-mcp-probe", "version": "1.0"},
+    },
+}).encode()
+try:
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    conn.request("POST", "/stream", body=body, headers={
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    })
+    resp = conn.getresponse()
+    sys.exit(0 if resp.status == 200 else 1)
+except Exception:
+    sys.exit(1)
+PYEOF
+}
+
 detect_mcp_port_linux() {
-    ss -tlnp 2>/dev/null | while IFS= read -r line; do
+    local candidates=()
+    while IFS= read -r line; do
         local port
         port=$(echo "$line" | grep -oP '127\.0\.0\.1:\K[0-9]+' || true)
         [ -z "$port" ] && continue
         if [ "$port" -ge 64342 ] && [ "$port" -le 65000 ]; then
             if echo "$line" | grep -qE '(remote-dev-serv|rider|Rider)'; then
-                echo "$port"
-                return 0
+                candidates+=("$port")
             fi
+        fi
+    done < <(ss -tlnp 2>/dev/null)
+
+    local port
+    for port in "${candidates[@]}"; do
+        if probe_mcp_port "$port"; then
+            echo "$port"
+            return 0
         fi
     done
     return 1
@@ -113,17 +152,23 @@ detect_mcp_port_windows() {
     local tasklist_output
     tasklist_output=$(cmd.exe /C "tasklist /FO CSV /NH" </dev/null 2>/dev/null | tr -d '\r') || true
 
+    local candidates=()
     local line port pid
     while IFS= read -r line; do
         port=$(echo "$line" | awk '{ split($2,a,":"); print a[length(a)] }')
         pid=$(echo "$line" | awk '{ print $NF }')
         if [ -n "$pid" ] && echo "$tasklist_output" | grep -qE "\"(rider64\.exe|Rider\.Backend\.exe)\",\"$pid\""; then
-            echo "$port"
-            return 0
+            candidates+=("$port")
         fi
     done < <(cmd.exe /C "netstat -ano" </dev/null 2>/dev/null | tr -d '\r' \
         | awk '/LISTENING/ { split($2,a,":"); p=a[length(a)]; if (p>=64342 && p<=65000) print }')
 
+    for port in "${candidates[@]}"; do
+        if probe_mcp_port "$port"; then
+            echo "$port"
+            return 0
+        fi
+    done
     return 1
 }
 
